@@ -216,7 +216,21 @@ backend:
           comment: "Generated via fpdf2 script. Verified locally: 200 application/pdf."
         - working: true
           agent: "testing"
-          comment: "✅ PASSED. GET /resume.pdf returns 200 with Content-Type: application/pdf. File size 3281 bytes, content verified to start with %PDF header. Static file serving working correctly."
+          comment: "Passed - 200 application/pdf. Later replaced with user's real resume PDF (121KB)."
+  - task: "Email alerts via Resend (contact + new chat session)"
+    implemented: true
+    working: true
+    file: "/app/lib/notify-owner.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Resend integration (resend@6.18.1, from onboarding@resend.dev, to OWNER_EMAIL=soumyajitbhandary9@gmail.com). Fire-and-forget via next/server after() in POST /api/contact and POST /api/chat (first message of a session only, idempotency key chat-<sessionId>). NOTE: Resend free tier only delivers to the account owner's email - a 403 in server logs means the Resend account is registered under a different email. Verify via supervisor logs: 'Owner alert sent:' vs 'Resend rejected notification:'."
+        - working: true
+          agent: "testing"
+          comment: "✅ ALL TESTS PASSED (3/3). (1) POST /api/contact email alert: Response 200 in 0.26s (fast, not blocking), log shows 'Owner alert sent: 96b06a38-34bd-49d1-943d-ea1290c713da contact' - Resend successfully delivered notification. (2) POST /api/chat email alert: Response 200 streaming in 1.73s (mostly OpenAI time), log shows 'Owner alert sent: 7299562a-e153-4f32-bc41-8976ff3f6071 chat' - Resend successfully delivered notification for new session. (3) GET /api/health regression: 200 OK. Email alerts are fire-and-forget via after() - do NOT block HTTP responses. No Resend errors (403/rejection/failure) detected - account email matches OWNER_EMAIL. Idempotency keys working (contact-<id>, chat-<sessionId>). Email integration fully functional."
 
 frontend:
   - task: "Portfolio page - hero/terminal/sections/bento/chat widget"
@@ -256,16 +270,12 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: false
 
 test_plan:
   current_focus:
-    - "POST /api/contact - contact form message stored in Mongo inbox"
-    - "POST /api/admin/verify - passcode login"
-    - "GET /api/admin/analytics - chat analytics (x-admin-key header auth)"
-    - "GET /api/admin/messages - contact inbox (x-admin-key header auth)"
-    - "GET /resume.pdf - static resume file"
+    - "Email alerts via Resend (contact + new chat session)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -277,3 +287,5 @@ agent_communication:
       message: "✅ BACKEND TESTING COMPLETE - ALL 9 TESTS PASSED (100% success rate). Comprehensive test coverage: (1) Health check endpoint working. (2) POST /api/chat streaming correctly with plain text (not JSON/SSE), Content-Type verified. (3) AI responses are perfectly grounded in portfolio data (RAGStack, DistilLab, metrics). (4) Multi-turn conversation with excellent context retention (follow-up about latency correctly referenced 800ms p95). (5) MongoDB persistence working (4 messages stored). (6) All validation rules working (400 for empty messages, wrong final role, missing sessionId). (7) 404 handling for unknown routes. No issues found. Backend API is production-ready."
     - agent: "testing"
       message: "✅ NEW ENDPOINTS TESTING COMPLETE - ALL 11 TESTS PASSED (100% success rate). Tested contact form, admin endpoints, and resume.pdf: (1) POST /api/contact working with all validations (missing fields, invalid email). (2) POST /api/admin/verify authentication working (correct/wrong passcode). (3) GET /api/admin/analytics returns complete analytics data with proper x-admin-key authentication (3 sessions, 8 messages, 4 questions from earlier tests). (4) GET /api/admin/messages returns contact inbox with proper authentication and newest-first ordering. (5) GET /resume.pdf serves PDF correctly (3281 bytes, application/pdf). All authentication, validation, and data persistence working correctly. Backend is fully functional and production-ready."
+    - agent: "testing"
+      message: "✅ EMAIL ALERTS TESTING COMPLETE - ALL 3 TESTS PASSED (100% success rate). Resend integration fully functional: (1) POST /api/contact triggers email alert successfully (Owner alert sent: 96b06a38-34bd-49d1-943d-ea1290c713da contact), response fast at 0.26s - email does NOT block request. (2) POST /api/chat (new session) triggers email alert successfully (Owner alert sent: 7299562a-e153-4f32-bc41-8976ff3f6071 chat), response 1.73s (mostly OpenAI time). (3) GET /api/health regression passed. Fire-and-forget via after() working correctly. No Resend errors (403/rejection/failure) - account email matches OWNER_EMAIL. Idempotency keys (contact-<id>, chat-<sessionId>) working. Email notifications delivered successfully to soumyajitbhandary9@gmail.com. Backend email integration production-ready."

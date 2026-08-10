@@ -110,7 +110,7 @@ const Terminal = () => {
         <span className="w-3 h-3 rounded-full bg-red-500/70" />
         <span className="w-3 h-3 rounded-full bg-amber-400/70" />
         <span className="w-3 h-3 rounded-full bg-emerald-400/70" />
-        <span className="ml-3 font-mono text-xs text-muted-foreground">alex@ml-rig ~ zsh</span>
+        <span className="ml-3 font-mono text-xs text-muted-foreground">{portfolio.personal.terminalTitle}</span>
       </div>
       <div className="p-5 font-mono text-sm leading-7 min-h-[220px]">
         {rendered.map((l, i) => (
@@ -503,10 +503,10 @@ const App = () => {
       <header className="fixed top-0 inset-x-0 z-40">
         <div className="container flex items-center justify-between py-4">
           <a href="#home" className="font-heading font-bold text-lg tracking-tight">
-            <span className="text-primary font-mono">&gt;_</span> {p.firstName.toLowerCase()}.carter
+            <span className="text-primary font-mono">&gt;_</span> {p.logoHandle}
           </a>
           <nav className="hidden lg:flex items-center gap-7">
-            {navLinks.map(([label, href]) => (
+            {navLinks.filter(([label]) => label !== "Writing" || portfolio.blog.length > 0).map(([label, href]) => (
               <a key={href} href={href} className="text-sm text-zinc-400 hover:text-foreground transition-colors">
                 {label}
               </a>
@@ -583,8 +583,8 @@ const App = () => {
             >
               <a href={p.social.github} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Github className="w-5 h-5" /></a>
               <a href={p.social.linkedin} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Linkedin className="w-5 h-5" /></a>
-              <a href={p.social.twitter} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Twitter className="w-5 h-5" /></a>
-              <a href={p.social.scholar} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><GraduationCap className="w-5 h-5" /></a>
+              {p.social.twitter && <a href={p.social.twitter} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Twitter className="w-5 h-5" /></a>}
+              {p.social.scholar && <a href={p.social.scholar} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><GraduationCap className="w-5 h-5" /></a>}
               <span className="text-xs font-mono flex items-center gap-1.5 ml-2"><MapPin className="w-3.5 h-3.5" />{p.location}</span>
             </motion.div>
           </div>
@@ -700,7 +700,7 @@ const App = () => {
                       <Badge variant="outline" className="border-cyan-400/40 text-cyan-300 font-mono text-[10px]">
                         {pub.venue} · {pub.year}
                       </Badge>
-                      <span className="font-mono text-xs text-amber-400">{pub.citations} citations</span>
+                      {pub.citations && <span className="font-mono text-xs text-amber-400">{pub.citations} citations</span>}
                     </div>
                     <h3 className="font-heading font-semibold text-lg group-hover:text-primary transition-colors">{pub.title}</h3>
                     <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">{pub.abstract}</p>
@@ -716,7 +716,7 @@ const App = () => {
       {/* ---------- EXPERIENCE ---------- */}
       <section id="experience" className="relative py-24 md:py-32">
         <div className="container">
-          <SectionHeading kicker="05 · Experience" title="Where I've shipped." />
+          <SectionHeading kicker="05 · Journey" title="Education & milestones." />
           <div className="relative max-w-3xl">
             <div className="absolute left-[19px] top-2 bottom-2 w-px bg-gradient-to-b from-primary/60 via-white/10 to-transparent" />
             <div className="space-y-10">
@@ -746,7 +746,8 @@ const App = () => {
         </div>
       </section>
 
-      {/* ---------- BLOG ---------- */}
+      {/* ---------- BLOG (hidden when no posts) ---------- */}
+      {portfolio.blog.length > 0 && (
       <section id="blog" className="relative py-24 md:py-32">
         <div className="container">
           <SectionHeading kicker="06 · Writing" title="Explaining the complex, clearly." />
@@ -767,6 +768,7 @@ const App = () => {
           </div>
         </div>
       </section>
+      )}
 
       {/* ---------- CONTACT ---------- */}
       <section id="contact" className="relative py-24 md:py-36">
@@ -800,8 +802,8 @@ const App = () => {
             <div className="mt-10 flex items-center justify-center gap-6 text-zinc-500">
               <a href={p.social.github} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Github className="w-5 h-5" /></a>
               <a href={p.social.linkedin} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Linkedin className="w-5 h-5" /></a>
-              <a href={p.social.twitter} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Twitter className="w-5 h-5" /></a>
-              <a href={p.social.scholar} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><GraduationCap className="w-5 h-5" /></a>
+              {p.social.twitter && <a href={p.social.twitter} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Twitter className="w-5 h-5" /></a>}
+              {p.social.scholar && <a href={p.social.scholar} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><GraduationCap className="w-5 h-5" /></a>}
             </div>
           </Reveal>
         </div>

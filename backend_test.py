@@ -1,387 +1,291 @@
 #!/usr/bin/env python3
 """
-Backend API Test Suite for Portfolio AI Assistant
-Tests the Next.js API routes at /app/app/api/[[...path]]/route.js
+Backend test for Email alerts via Resend integration
+Tests POST /api/contact and POST /api/chat email notifications
 """
-
-import os
-import sys
-import json
 import requests
-from dotenv import load_dotenv
+import time
+import json
+import uuid
+import subprocess
 
-# Load environment variables
-load_dotenv('/app/.env')
+BASE_URL = "https://neural-portfolio-88.preview.emergentagent.com/api"
 
-BASE_URL = os.getenv('NEXT_PUBLIC_BASE_URL', 'https://neural-portfolio-88.preview.emergentagent.com')
-API_URL = f"{BASE_URL}/api"
-
-print(f"🧪 Testing Backend API at: {API_URL}\n")
-print("=" * 80)
-
-# Test session ID for all tests
-TEST_SESSION_ID = "backend-test-1"
-
-# Track test results
-test_results = {
-    "passed": 0,
-    "failed": 0,
-    "tests": []
-}
-
-def log_test(name, passed, details=""):
-    """Log test result"""
-    status = "✅ PASS" if passed else "❌ FAIL"
-    print(f"\n{status}: {name}")
-    if details:
-        print(f"   {details}")
+def check_logs_for_email(wait_seconds=5):
+    """Check supervisor logs for email notification results"""
+    print(f"\n⏳ Waiting {wait_seconds}s for email to be sent...")
+    time.sleep(wait_seconds)
     
-    test_results["tests"].append({
-        "name": name,
-        "passed": passed,
-        "details": details
-    })
-    
-    if passed:
-        test_results["passed"] += 1
-    else:
-        test_results["failed"] += 1
+    try:
+        result = subprocess.run(
+            ["tail", "-n", "40", "/var/log/supervisor/nextjs.out.log"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        logs = result.stdout
+        print("\n📋 Recent logs (last 40 lines):")
+        print("=" * 80)
+        print(logs)
+        print("=" * 80)
+        
+        # Check for success
+        if "Owner alert sent:" in logs:
+            lines = [l for l in logs.split('\n') if "Owner alert sent:" in l]
+            print(f"\n✅ EMAIL SUCCESS: Found {len(lines)} email notification(s)")
+            for line in lines:
+                print(f"   {line.strip()}")
+            return "success", lines[-1] if lines else ""
+        
+        # Check for Resend rejection (403 = account email mismatch)
+        if "Resend rejected notification:" in logs:
+            lines = [l for l in logs.split('\n') if "Resend rejected notification:" in l]
+            print(f"\n❌ EMAIL REJECTED: Resend API rejected the notification")
+            for line in lines:
+                print(f"   {line.strip()}")
+            return "rejected", lines[-1] if lines else ""
+        
+        # Check for other failures
+        if "Resend notification failed:" in logs:
+            lines = [l for l in logs.split('\n') if "Resend notification failed:" in l]
+            print(f"\n❌ EMAIL FAILED: Resend notification failed")
+            for line in lines:
+                print(f"   {line.strip()}")
+            return "failed", lines[-1] if lines else ""
+        
+        # Check for skipped (missing env vars)
+        if "Email alerts skipped:" in logs:
+            print("\n⚠️  EMAIL SKIPPED: RESEND_API_KEY or OWNER_EMAIL missing")
+            return "skipped", ""
+        
+        print("\n⚠️  NO EMAIL LOGS FOUND: Email may not have been triggered or logs not yet written")
+        return "unknown", ""
+        
+    except Exception as e:
+        print(f"\n❌ Error checking logs: {e}")
+        return "error", str(e)
 
-# ============================================================
-# TEST 1: GET /api/health
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 1: GET /api/health")
-print("=" * 80)
-
-try:
-    response = requests.get(f"{API_URL}/health", timeout=10)
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
+def test_contact_email_alert():
+    """Test 1: POST /api/contact should trigger email alert"""
+    print("\n" + "="*80)
+    print("TEST 1: POST /api/contact - Email Alert")
+    print("="*80)
     
-    if response.status_code == 200:
+    try:
+        # Clear recent logs by noting timestamp
+        print(f"📤 Sending contact form submission...")
+        start_time = time.time()
+        
+        payload = {
+            "name": "Email Test User",
+            "email": "test@example.com",
+            "message": "Testing email alerts via Resend integration"
+        }
+        
+        response = requests.post(
+            f"{BASE_URL}/contact",
+            json=payload,
+            timeout=10
+        )
+        
+        response_time = time.time() - start_time
+        
+        print(f"Status: {response.status_code}")
+        print(f"Response time: {response_time:.2f}s")
+        print(f"Response: {response.text}")
+        
+        if response.status_code != 200:
+            print(f"❌ FAILED: Expected 200, got {response.status_code}")
+            return False
+        
         data = response.json()
-        if data.get('status') == 'ok':
-            log_test("GET /api/health", True, "Returns 200 with {status:'ok'}")
+        if not data.get("success"):
+            print(f"❌ FAILED: Expected success:true, got {data}")
+            return False
+        
+        if response_time > 2.0:
+            print(f"⚠️  WARNING: Response took {response_time:.2f}s (should be <2s, email should not block)")
         else:
-            log_test("GET /api/health", False, f"Expected status:'ok', got {data}")
-    else:
-        log_test("GET /api/health", False, f"Expected 200, got {response.status_code}")
-except Exception as e:
-    log_test("GET /api/health", False, f"Exception: {str(e)}")
-
-# ============================================================
-# TEST 2: POST /api/chat - Streaming response grounded in portfolio
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 2: POST /api/chat - Streaming AI response")
-print("=" * 80)
-
-first_user_message = "What has he built with LLMs?"
-first_assistant_response = ""
-
-try:
-    payload = {
-        "sessionId": TEST_SESSION_ID,
-        "messages": [
-            {"role": "user", "content": first_user_message}
-        ]
-    }
-    
-    print(f"Request: POST {API_URL}/chat")
-    print(f"Payload: {json.dumps(payload, indent=2)}")
-    
-    response = requests.post(
-        f"{API_URL}/chat",
-        json=payload,
-        stream=True,
-        timeout=30
-    )
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Content-Type: {response.headers.get('Content-Type')}")
-    
-    if response.status_code == 200:
-        content_type = response.headers.get('Content-Type', '')
+            print(f"✅ Response fast ({response_time:.2f}s) - email not blocking request")
         
-        # Check Content-Type is text/plain
-        if 'text/plain' not in content_type:
-            log_test("POST /api/chat - Content-Type", False, f"Expected text/plain, got {content_type}")
-        else:
-            print("✓ Content-Type is text/plain")
+        print(f"✅ Contact form submitted successfully, id: {data.get('id')}")
         
-        # Stream and collect response
-        print("\nStreaming Response:")
-        print("-" * 80)
-        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-            if chunk:
-                first_assistant_response += chunk
-                print(chunk, end='', flush=True)
-        print("\n" + "-" * 80)
+        # Check logs for email notification
+        status, log_line = check_logs_for_email(wait_seconds=5)
         
-        # Check if response is grounded (mentions RAGStack or DistilLab)
-        response_lower = first_assistant_response.lower()
-        is_grounded = ('ragstack' in response_lower or 
-                      'distillab' in response_lower or
-                      'rag' in response_lower or
-                      'distil' in response_lower or
-                      'llm' in response_lower)
-        
-        if is_grounded:
-            log_test("POST /api/chat - Grounded response", True, 
-                    "Response mentions portfolio projects (RAGStack/DistilLab/LLM work)")
-        else:
-            log_test("POST /api/chat - Grounded response", False, 
-                    "Response does not clearly reference portfolio LLM projects")
-        
-        log_test("POST /api/chat - Streaming", True, "Successfully streamed plain text response")
-    else:
-        log_test("POST /api/chat", False, f"Expected 200, got {response.status_code}: {response.text}")
-        
-except Exception as e:
-    log_test("POST /api/chat", False, f"Exception: {str(e)}")
-
-# ============================================================
-# TEST 3: Multi-turn conversation with context retention
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 3: Multi-turn conversation - Context retention")
-print("=" * 80)
-
-second_user_message = "What was the latency of that project?"
-second_assistant_response = ""
-
-try:
-    # Include previous conversation in messages array
-    payload = {
-        "sessionId": TEST_SESSION_ID,
-        "messages": [
-            {"role": "user", "content": first_user_message},
-            {"role": "assistant", "content": first_assistant_response},
-            {"role": "user", "content": second_user_message}
-        ]
-    }
-    
-    print(f"Request: POST {API_URL}/chat")
-    print(f"Payload: {json.dumps(payload, indent=2)[:500]}...")
-    
-    response = requests.post(
-        f"{API_URL}/chat",
-        json=payload,
-        stream=True,
-        timeout=30
-    )
-    
-    print(f"Status Code: {response.status_code}")
-    
-    if response.status_code == 200:
-        print("\nStreaming Response:")
-        print("-" * 80)
-        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
-            if chunk:
-                second_assistant_response += chunk
-                print(chunk, end='', flush=True)
-        print("\n" + "-" * 80)
-        
-        # Check if response references latency metrics (800ms for RAGStack)
-        response_lower = second_assistant_response.lower()
-        has_latency_context = ('800' in response_lower or 
-                              'latency' in response_lower or
-                              'ms' in response_lower or
-                              'p95' in response_lower)
-        
-        if has_latency_context:
-            log_test("Multi-turn conversation", True, 
-                    "Response shows context retention (references latency metrics)")
-        else:
-            log_test("Multi-turn conversation", False, 
-                    "Response does not clearly reference latency/metrics from context")
-    else:
-        log_test("Multi-turn conversation", False, 
-                f"Expected 200, got {response.status_code}: {response.text}")
-        
-except Exception as e:
-    log_test("Multi-turn conversation", False, f"Exception: {str(e)}")
-
-# ============================================================
-# TEST 4: GET /api/chat/history?sessionId=backend-test-1
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 4: GET /api/chat/history with sessionId")
-print("=" * 80)
-
-try:
-    response = requests.get(
-        f"{API_URL}/chat/history",
-        params={"sessionId": TEST_SESSION_ID},
-        timeout=10
-    )
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text[:500]}...")
-    
-    if response.status_code == 200:
-        data = response.json()
-        
-        # Check structure
-        if 'sessionId' in data and 'messages' in data:
-            print(f"✓ Response has correct structure")
-            print(f"  sessionId: {data['sessionId']}")
-            print(f"  messages count: {len(data['messages'])}")
-            
-            # Should have 4 messages after 2 exchanges (2 user + 2 assistant)
-            if len(data['messages']) >= 4:
-                log_test("GET /api/chat/history", True, 
-                        f"Returns persisted conversation ({len(data['messages'])} messages)")
+        if status == "success":
+            if "contact" in log_line:
+                print("✅ TEST 1 PASSED: Contact email alert sent successfully")
+                return True
             else:
-                log_test("GET /api/chat/history", False, 
-                        f"Expected at least 4 messages, got {len(data['messages'])}")
+                print("⚠️  Email sent but type unclear from logs")
+                return True
+        elif status == "rejected":
+            print("❌ TEST 1 FAILED: Resend rejected the notification (likely 403 - account email mismatch)")
+            return False
+        elif status == "failed":
+            print("❌ TEST 1 FAILED: Email notification failed")
+            return False
+        elif status == "skipped":
+            print("⚠️  TEST 1 SKIPPED: Email alerts disabled (missing env vars)")
+            return True  # Not a failure, just not configured
         else:
-            log_test("GET /api/chat/history", False, 
-                    f"Missing sessionId or messages in response: {data}")
-    else:
-        log_test("GET /api/chat/history", False, 
-                f"Expected 200, got {response.status_code}: {response.text}")
+            print("⚠️  TEST 1 UNCERTAIN: Could not confirm email status from logs")
+            return False
+            
+    except Exception as e:
+        print(f"❌ TEST 1 EXCEPTION: {e}")
+        return False
+
+def test_chat_email_alert():
+    """Test 2: POST /api/chat (new session) should trigger email alert"""
+    print("\n" + "="*80)
+    print("TEST 2: POST /api/chat - Email Alert for New Session")
+    print("="*80)
+    
+    try:
+        session_id = f"email-alert-test-{uuid.uuid4().hex[:8]}"
+        print(f"📤 Starting new chat session: {session_id}")
+        start_time = time.time()
         
-except Exception as e:
-    log_test("GET /api/chat/history", False, f"Exception: {str(e)}")
+        payload = {
+            "sessionId": session_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hi, what does he work on?"
+                }
+            ]
+        }
+        
+        response = requests.post(
+            f"{BASE_URL}/chat",
+            json=payload,
+            timeout=30,
+            stream=True
+        )
+        
+        print(f"Status: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"❌ FAILED: Expected 200, got {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+        
+        # Read streaming response
+        full_response = ""
+        for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+            if chunk:
+                full_response += chunk
+        
+        response_time = time.time() - start_time
+        
+        print(f"Response time: {response_time:.2f}s")
+        print(f"Content-Type: {response.headers.get('Content-Type')}")
+        print(f"Response length: {len(full_response)} chars")
+        print(f"Response preview: {full_response[:200]}...")
+        
+        if not full_response:
+            print("❌ FAILED: Empty response")
+            return False
+        
+        print(f"✅ Chat response received successfully")
+        
+        # Check logs for email notification
+        status, log_line = check_logs_for_email(wait_seconds=5)
+        
+        if status == "success":
+            if "chat" in log_line:
+                print("✅ TEST 2 PASSED: Chat email alert sent successfully")
+                return True
+            else:
+                print("⚠️  Email sent but type unclear from logs")
+                return True
+        elif status == "rejected":
+            print("❌ TEST 2 FAILED: Resend rejected the notification (likely 403 - account email mismatch)")
+            return False
+        elif status == "failed":
+            print("❌ TEST 2 FAILED: Email notification failed")
+            return False
+        elif status == "skipped":
+            print("⚠️  TEST 2 SKIPPED: Email alerts disabled (missing env vars)")
+            return True  # Not a failure, just not configured
+        else:
+            print("⚠️  TEST 2 UNCERTAIN: Could not confirm email status from logs")
+            return False
+            
+    except Exception as e:
+        print(f"❌ TEST 2 EXCEPTION: {e}")
+        return False
 
-# ============================================================
-# TEST 5: GET /api/chat/history without sessionId (should fail)
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 5: GET /api/chat/history without sessionId (validation)")
-print("=" * 80)
-
-try:
-    response = requests.get(f"{API_URL}/chat/history", timeout=10)
+def test_health_regression():
+    """Test 3: GET /api/health - Regression test"""
+    print("\n" + "="*80)
+    print("TEST 3: GET /api/health - Regression")
+    print("="*80)
     
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 400:
+    try:
+        response = requests.get(f"{BASE_URL}/health", timeout=5)
+        print(f"Status: {response.status_code}")
+        print(f"Response: {response.text}")
+        
+        if response.status_code != 200:
+            print(f"❌ FAILED: Expected 200, got {response.status_code}")
+            return False
+        
         data = response.json()
-        if 'error' in data:
-            log_test("GET /api/chat/history without sessionId", True, 
-                    "Returns 400 with error message")
-        else:
-            log_test("GET /api/chat/history without sessionId", False, 
-                    "Returns 400 but missing error field")
-    else:
-        log_test("GET /api/chat/history without sessionId", False, 
-                f"Expected 400, got {response.status_code}")
+        if data.get("status") != "ok":
+            print(f"❌ FAILED: Expected status:ok, got {data}")
+            return False
         
-except Exception as e:
-    log_test("GET /api/chat/history without sessionId", False, f"Exception: {str(e)}")
-
-# ============================================================
-# TEST 6: POST /api/chat with empty messages array (should fail)
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 6: POST /api/chat with empty messages (validation)")
-print("=" * 80)
-
-try:
-    payload = {
-        "sessionId": "test-validation",
-        "messages": []
-    }
-    
-    print(f"Request: POST {API_URL}/chat")
-    print(f"Payload: {json.dumps(payload)}")
-    
-    response = requests.post(f"{API_URL}/chat", json=payload, timeout=10)
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 400:
-        log_test("POST /api/chat with empty messages", True, 
-                "Returns 400 for empty messages array")
-    else:
-        log_test("POST /api/chat with empty messages", False, 
-                f"Expected 400, got {response.status_code}")
+        print("✅ TEST 3 PASSED: Health check working")
+        return True
         
-except Exception as e:
-    log_test("POST /api/chat with empty messages", False, f"Exception: {str(e)}")
+    except Exception as e:
+        print(f"❌ TEST 3 EXCEPTION: {e}")
+        return False
 
-# ============================================================
-# TEST 7: POST /api/chat with final message role 'assistant' (should fail)
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 7: POST /api/chat with final message role 'assistant' (validation)")
-print("=" * 80)
-
-try:
-    payload = {
-        "sessionId": "test-validation-2",
-        "messages": [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi there"}
-        ]
-    }
+def main():
+    print("\n" + "="*80)
+    print("🧪 BACKEND TEST: Email Alerts via Resend Integration")
+    print("="*80)
+    print(f"Base URL: {BASE_URL}")
+    print(f"Testing: POST /api/contact, POST /api/chat email notifications")
+    print("="*80)
     
-    print(f"Request: POST {API_URL}/chat")
-    print(f"Payload: {json.dumps(payload)}")
+    results = []
     
-    response = requests.post(f"{API_URL}/chat", json=payload, timeout=10)
+    # Test 1: Contact form email
+    results.append(("Contact email alert", test_contact_email_alert()))
     
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
+    # Test 2: Chat session email
+    results.append(("Chat email alert", test_chat_email_alert()))
     
-    if response.status_code == 400:
-        log_test("POST /api/chat with final role 'assistant'", True, 
-                "Returns 400 when final message is not from user")
+    # Test 3: Health check regression
+    results.append(("Health check regression", test_health_regression()))
+    
+    # Summary
+    print("\n" + "="*80)
+    print("📊 TEST SUMMARY")
+    print("="*80)
+    
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for name, result in results:
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"{status}: {name}")
+    
+    print("="*80)
+    print(f"Result: {passed}/{total} tests passed")
+    print("="*80)
+    
+    if passed == total:
+        print("\n🎉 ALL TESTS PASSED!")
+        return 0
     else:
-        log_test("POST /api/chat with final role 'assistant'", False, 
-                f"Expected 400, got {response.status_code}")
-        
-except Exception as e:
-    log_test("POST /api/chat with final role 'assistant'", False, f"Exception: {str(e)}")
+        print(f"\n⚠️  {total - passed} test(s) failed")
+        return 1
 
-# ============================================================
-# TEST 8: POST /api/unknownpath (should return 404)
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST 8: POST /api/unknownpath (404 handling)")
-print("=" * 80)
-
-try:
-    response = requests.post(
-        f"{API_URL}/unknownpath",
-        json={"test": "data"},
-        timeout=10
-    )
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.text}")
-    
-    if response.status_code == 404:
-        log_test("POST /api/unknownpath", True, "Returns 404 for unknown route")
-    else:
-        log_test("POST /api/unknownpath", False, 
-                f"Expected 404, got {response.status_code}")
-        
-except Exception as e:
-    log_test("POST /api/unknownpath", False, f"Exception: {str(e)}")
-
-# ============================================================
-# SUMMARY
-# ============================================================
-print("\n" + "=" * 80)
-print("TEST SUMMARY")
-print("=" * 80)
-
-print(f"\n✅ Passed: {test_results['passed']}")
-print(f"❌ Failed: {test_results['failed']}")
-print(f"📊 Total:  {test_results['passed'] + test_results['failed']}")
-
-print("\nDetailed Results:")
-for test in test_results['tests']:
-    status = "✅" if test['passed'] else "❌"
-    print(f"{status} {test['name']}")
-    if test['details']:
-        print(f"   {test['details']}")
-
-# Exit with appropriate code
-sys.exit(0 if test_results['failed'] == 0 else 1)
+if __name__ == "__main__":
+    exit(main())

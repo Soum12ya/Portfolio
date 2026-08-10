@@ -1,21 +1,21 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Alex Carter — AI Engineer & Researcher",
+  title: "Soumyajit Bhandary — AI Backend & Agentic AI Engineer",
   description:
-    "AI engineer building production-grade LLM systems. 6+ years shipping ML from research to 10M+ requests/day — RAG platforms, model compression, MLOps.",
-  keywords: ["AI Engineer", "Machine Learning", "LLM", "RAG", "MLOps", "Deep Learning", "Portfolio"],
+    "AI engineer building production-grade agentic AI systems, RAG pipelines, and distributed backends. Multi-agent orchestration with LangGraph, LLM evals, human-in-the-loop design. IEEE-published researcher.",
+  keywords: ["AI Engineer", "Agentic AI", "LangGraph", "LLM", "RAG", "Backend Engineering", "Multi-Agent Systems", "Portfolio", "Soumyajit Bhandary"],
   openGraph: {
-    title: "Alex Carter — AI Engineer & Researcher",
+    title: "Soumyajit Bhandary — AI Backend & Agentic AI Engineer",
     description:
-      "Production-grade LLM systems, model compression research, and end-to-end MLOps. Chat with my AI twin to learn more.",
+      "Production-grade agentic AI systems, RAG pipelines, and distributed backends. Chat with my AI twin to learn more.",
     type: "website",
-    siteName: "Alex Carter Portfolio",
+    siteName: "Soumyajit Bhandary Portfolio",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Alex Carter — AI Engineer & Researcher",
-    description: "Production-grade LLM systems and efficient deep learning research.",
+    title: "Soumyajit Bhandary — AI Backend & Agentic AI Engineer",
+    description: "Production-grade agentic AI systems, RAG pipelines, and distributed backends.",
   },
 };
 

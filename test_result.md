@@ -147,6 +147,76 @@ backend:
         - working: true
           agent: "testing"
           comment: "✅ PASSED. GET /api/health returns 200 with {status:'ok', service:'portfolio-api'}. Also verified POST /api/unknownpath returns 404 with error message."
+  - task: "POST /api/contact - contact form message stored in Mongo inbox"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Validates name/email/message (email regex), stores in contact_messages collection with uuid + createdAt. Returns {success, id}. 400 on missing fields or invalid email."
+        - working: true
+          agent: "testing"
+          comment: "✅ ALL TESTS PASSED. (1) POST /api/contact with valid data returns 200 with {success:true, id:<uuid>}. (2) Missing fields validation working - returns 400 with error 'name, email and message are required'. (3) Invalid email validation working - returns 400 with error 'Please provide a valid email address'. Message successfully stored in MongoDB contact_messages collection and retrievable via admin/messages endpoint."
+  - task: "POST /api/admin/verify - passcode login"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Body {passcode}. Correct passcode (env ADMIN_PASSCODE=admin123) returns {success:true}; wrong returns 401."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASSED. (1) POST /api/admin/verify with correct passcode 'admin123' returns 200 with {success:true}. (2) Wrong passcode returns 401 with error 'Invalid passcode'. Authentication working correctly."
+  - task: "GET /api/admin/analytics - chat analytics (x-admin-key header auth)"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Requires header x-admin-key: admin123. Returns {totalSessions, totalMessages, totalQuestions, recentQuestions[], sessions[]} aggregated from chat_sessions. 401 without/with wrong key."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASSED. (1) GET /api/admin/analytics with x-admin-key header returns 200 with all required fields: totalSessions, totalMessages, totalQuestions, recentQuestions[], sessions[]. Verified data from earlier chat tests (3 sessions, 8 messages, 4 questions). (2) Without header returns 401 Unauthorized. (3) With wrong key returns 401 Unauthorized. Authentication and data aggregation working correctly."
+  - task: "GET /api/admin/messages - contact inbox (x-admin-key header auth)"
+    implemented: true
+    working: true
+    file: "/app/app/api/[[...path]]/route.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Requires header x-admin-key. Returns {messages:[]} newest first from contact_messages."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASSED. (1) GET /api/admin/messages with x-admin-key header returns 200 with {messages:[]} array. Verified test message from contact form is present and retrievable (newest first ordering). (2) Without header returns 401 Unauthorized. Authentication and message retrieval working correctly."
+  - task: "GET /resume.pdf - static resume file"
+    implemented: true
+    working: true
+    file: "/app/public/resume.pdf"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Generated via fpdf2 script. Verified locally: 200 application/pdf."
+        - working: true
+          agent: "testing"
+          comment: "✅ PASSED. GET /resume.pdf returns 200 with Content-Type: application/pdf. File size 3281 bytes, content verified to start with %PDF header. Static file serving working correctly."
 
 frontend:
   - task: "Portfolio page - hero/terminal/sections/bento/chat widget"
@@ -160,15 +230,42 @@ frontend:
         - working: "NA"
           agent: "main"
           comment: "Verified visually via screenshots: hero with gradient text + terminal typing, chat widget opens, suggestion chip triggers streamed grounded response. Not yet tested by frontend testing agent."
+  - task: "Contact form in Contact section"
+    implemented: true
+    working: "NA"
+    file: "/app/app/page.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Glass form (name/email/message) posts to /api/contact, shows success/error inline."
+  - task: "Admin dashboard /admin - passcode gate, analytics, inbox"
+    implemented: true
+    working: "NA"
+    file: "/app/app/admin/page.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Passcode login via /api/admin/verify, sessionStorage key, stat cards + AI Twin questions tab + contact inbox tab."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 4
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "POST /api/contact - contact form message stored in Mongo inbox"
+    - "POST /api/admin/verify - passcode login"
+    - "GET /api/admin/analytics - chat analytics (x-admin-key header auth)"
+    - "GET /api/admin/messages - contact inbox (x-admin-key header auth)"
+    - "GET /resume.pdf - static resume file"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -178,3 +275,5 @@ agent_communication:
       message: "Please test backend API at {NEXT_PUBLIC_BASE_URL}/api. Key tests: 1) POST /api/chat with {sessionId:'test-...', messages:[{role:'user',content:'What has he built with LLMs?'}]} should stream plain text (Content-Type text/plain), response should mention RAGStack/DistilLab (grounded, no hallucination). 2) Multi-turn: send follow-up including prior assistant msg, verify context retained. 3) GET /api/chat/history?sessionId=<same> returns persisted messages. 4) Validation: empty messages array or final message not from user should return 400. 5) GET /api/health returns ok. NOTE: /api/chat streams plain text NOT JSON/SSE. Uses real OpenAI key (gpt-4o-mini) - keep test volume modest."
     - agent: "testing"
       message: "✅ BACKEND TESTING COMPLETE - ALL 9 TESTS PASSED (100% success rate). Comprehensive test coverage: (1) Health check endpoint working. (2) POST /api/chat streaming correctly with plain text (not JSON/SSE), Content-Type verified. (3) AI responses are perfectly grounded in portfolio data (RAGStack, DistilLab, metrics). (4) Multi-turn conversation with excellent context retention (follow-up about latency correctly referenced 800ms p95). (5) MongoDB persistence working (4 messages stored). (6) All validation rules working (400 for empty messages, wrong final role, missing sessionId). (7) 404 handling for unknown routes. No issues found. Backend API is production-ready."
+    - agent: "testing"
+      message: "✅ NEW ENDPOINTS TESTING COMPLETE - ALL 11 TESTS PASSED (100% success rate). Tested contact form, admin endpoints, and resume.pdf: (1) POST /api/contact working with all validations (missing fields, invalid email). (2) POST /api/admin/verify authentication working (correct/wrong passcode). (3) GET /api/admin/analytics returns complete analytics data with proper x-admin-key authentication (3 sessions, 8 messages, 4 questions from earlier tests). (4) GET /api/admin/messages returns contact inbox with proper authentication and newest-first ordering. (5) GET /resume.pdf serves PDF correctly (3281 bytes, application/pdf). All authentication, validation, and data persistence working correctly. Backend is fully functional and production-ready."

@@ -91,12 +91,67 @@ function getPath(request) {
   return url.pathname.replace(/^\/api\/?/, "").replace(/\/$/, "");
 }
 
+// Simple passcode auth for the private admin dashboard
+function isAdmin(request) {
+  const key = request.headers.get("x-admin-key") || "";
+  return key.length > 0 && key === (process.env.ADMIN_PASSCODE || "admin123");
+}
+
 // ---------------- GET ----------------
 export async function GET(request) {
   const path = getPath(request);
   try {
     if (path === "" || path === "health") {
       return NextResponse.json({ status: "ok", service: "portfolio-api" });
+    }
+
+    // ---- Admin: chat analytics (protected by x-admin-key header) ----
+    if (path === "admin/analytics") {
+      if (!isAdmin(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const db = await getDb();
+      const sessions = await db
+        .collection("chat_sessions")
+        .find({}, { projection: { _id: 0, sessionId: 1, messages: 1, createdAt: 1, updatedAt: 1 } })
+        .sort({ updatedAt: -1 })
+        .limit(200)
+        .toArray();
+      let totalMessages = 0;
+      const recentQuestions = [];
+      for (const s of sessions) {
+        const msgs = s.messages || [];
+        totalMessages += msgs.length;
+        for (const m of msgs) {
+          if (m.role === "user") {
+            recentQuestions.push({ sessionId: s.sessionId, question: m.content, ts: m.ts || s.updatedAt });
+          }
+        }
+      }
+      recentQuestions.sort((a, b) => (b.ts || "").localeCompare(a.ts || ""));
+      return NextResponse.json({
+        totalSessions: sessions.length,
+        totalMessages,
+        totalQuestions: recentQuestions.length,
+        recentQuestions: recentQuestions.slice(0, 100),
+        sessions: sessions.map((s) => ({
+          sessionId: s.sessionId,
+          messageCount: (s.messages || []).length,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+        })),
+      });
+    }
+
+    // ---- Admin: contact inbox (protected) ----
+    if (path === "admin/messages") {
+      if (!isAdmin(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const db = await getDb();
+      const items = await db
+        .collection("contact_messages")
+        .find({}, { projection: { _id: 0 } })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .toArray();
+      return NextResponse.json({ messages: items });
     }
 
     if (path === "chat/history") {
@@ -123,6 +178,41 @@ export async function GET(request) {
 // ---------------- POST ----------------
 export async function POST(request) {
   const path = getPath(request);
+
+  // ---- Contact form: store message in Mongo inbox ----
+  if (path === "contact") {
+    try {
+      const body = await request.json();
+      const name = String(body.name || "").trim().slice(0, 120);
+      const email = String(body.email || "").trim().slice(0, 200);
+      const message = String(body.message || "").trim().slice(0, 5000);
+      if (!name || !email || !message) {
+        return NextResponse.json({ error: "name, email and message are required" }, { status: 400 });
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: "Please provide a valid email address" }, { status: 400 });
+      }
+      const db = await getDb();
+      const doc = { id: uuidv4(), name, email, message, read: false, createdAt: new Date().toISOString() };
+      await db.collection("contact_messages").insertOne({ ...doc });
+      return NextResponse.json({ success: true, id: doc.id });
+    } catch (error) {
+      console.error("Contact error:", error);
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+  }
+
+  // ---- Admin passcode verification (for dashboard login gate) ----
+  if (path === "admin/verify") {
+    try {
+      const body = await request.json();
+      const ok = String(body.passcode || "") === (process.env.ADMIN_PASSCODE || "admin123");
+      if (!ok) return NextResponse.json({ error: "Invalid passcode" }, { status: 401 });
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+  }
 
   if (path !== "chat") {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

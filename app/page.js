@@ -408,6 +408,77 @@ const ChatWidget = () => {
   );
 };
 
+// ---------- Contact form (messages land in the private admin inbox) ----------
+const ContactForm = () => {
+  const [form, setForm] = useState({ name: "", email: "", message: "" });
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const submit = async (e) => {
+    e.preventDefault();
+    if (status === "sending") return;
+    setStatus("sending");
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error("failed");
+      setStatus("sent");
+      setForm({ name: "", email: "", message: "" });
+    } catch (err) {
+      setStatus("error");
+    }
+  };
+  return (
+    <form onSubmit={submit} className="glass rounded-2xl p-6 md:p-8 text-left space-y-4" data-testid="contact-form">
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Input
+          data-testid="contact-name"
+          required
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="Your name"
+          className="bg-white/5 border-white/10 focus-visible:ring-primary"
+        />
+        <Input
+          data-testid="contact-email"
+          required
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="you@company.com"
+          className="bg-white/5 border-white/10 focus-visible:ring-primary"
+        />
+      </div>
+      <textarea
+        data-testid="contact-message"
+        required
+        value={form.message}
+        onChange={(e) => setForm({ ...form, message: e.target.value })}
+        placeholder="Tell me about the role or project..."
+        rows={4}
+        className="w-full rounded-md bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+      />
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <Button
+          data-testid="contact-submit"
+          type="submit"
+          disabled={status === "sending"}
+          className="bg-primary hover:bg-primary/85 shadow-lg shadow-primary/30"
+        >
+          {status === "sending" ? "Sending..." : (<><Send className="w-4 h-4 mr-2" /> Send message</>)}
+        </Button>
+        {status === "sent" && (
+          <p className="text-sm text-emerald-400" data-testid="contact-success">Message sent — I&apos;ll get back to you soon!</p>
+        )}
+        {status === "error" && (
+          <p className="text-sm text-red-400">Something went wrong. Please try again or email me directly.</p>
+        )}
+      </div>
+    </form>
+  );
+};
+
 // ============================================================
 // MAIN PAGE
 // ============================================================
@@ -722,6 +793,9 @@ const App = () => {
               <Button asChild size="lg" variant="outline" className="border-white/15 hover:bg-white/5">
                 <a href={p.resumeUrl}><Download className="w-4 h-4 mr-2" /> Resume</a>
               </Button>
+            </div>
+            <div className="mt-10">
+              <ContactForm />
             </div>
             <div className="mt-10 flex items-center justify-center gap-6 text-zinc-500">
               <a href={p.social.github} target="_blank" rel="noreferrer" className="hover:text-primary transition-colors"><Github className="w-5 h-5" /></a>
